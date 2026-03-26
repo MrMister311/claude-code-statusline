@@ -1,5 +1,8 @@
 # Build a Custom Claude Code Statusline
 
+
+![Claude Code Statusline](statusline.jpg)
+
 ## What This Is
 
 Claude Code supports a customizable status bar at the bottom of the CLI. It works by running a shell script you write, piping JSON session data to it via stdin, and displaying whatever your script outputs to stdout. It updates after every assistant message (~300ms debounce).
