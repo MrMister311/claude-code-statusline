@@ -1,249 +1,112 @@
-# Claude Code Custom Statusline
+# Claude Code Statusline — Service Status Add-on
 
-Claude Code already has [built-in statusline support](https://code.claude.com/docs/en/statusline) — it lets you run a custom script that displays whatever you want at the bottom of the CLI. This project is a **ready-to-use script** that takes advantage of that feature and adds a few things on top.
+Claude Code already lets you build a custom statusline with one command — just type `/statusline` and describe what you want. It'll generate a script, save it, and configure it for you. No repo needed.
+
+**This project adds one thing you can't get from `/statusline`:** a live indicator that checks whether Claude Code's servers are actually up.
 
 ![Claude Code Statusline](statusline.jpg)
 
-### What's native to Claude Code vs. what this adds
+The green check mark in the screenshot — that's the service status indicator. It pings Anthropic's public status page and shows you at a glance:
 
-Claude Code's built-in statusline gives you the *infrastructure* — it runs your script after every message and feeds it session data (model, tokens, costs, etc.). But out of the box, there's no script. You bring your own.
+- **Green ✓** — servers are working normally
+- **Yellow ◐** — servers are up but slower than usual
+- **Yellow ⚠** — partial outage
+- **Red ✗** — major outage
+- **Gray ?** — couldn't reach the status page (retries every 60 seconds)
 
-**This script adds:**
-- A **color-coded context progress bar** that shifts from green to yellow to red as you fill up
-- A **live server status indicator** that checks Anthropic's status page so you know if Claude is having issues
-- **Git branch display** so you always know what branch you're working on
-- **Formatted token counts** with comma separators for readability
-- **Session timer** showing how long you've been working
-- **A "waiting" state** before your first response (instead of showing a confusing empty bar)
-- **Caching** for git lookups and status API calls so the script stays fast
-
-Everything else — the JSON data, the settings.json config, the ability to run a custom script — that's all Claude Code's native feature. We just built a nice script on top of it.
-
-> For full details on Claude Code's native statusline support, see the [official documentation](https://code.claude.com/docs/en/statusline).
+> For the official statusline docs, see [code.claude.com/docs/en/statusline](https://code.claude.com/docs/en/statusline).
 
 ---
 
-**What you're looking at in the screenshot:**
-- **`[Opus 4.6 (1M context)]`** — the model and context window you're using
-- **`HomeLab | main`** — your current project folder and git branch
-- **Server status icon** — live check on Claude Code's servers:
-  - **Green check mark (✓)** — everything's working normally
-  - **Yellow half-circle (◐)** — servers are up but slower than usual
-  - **Yellow warning (⚠)** — partial outage, some features may not work
-  - **Red X (✗)** — major outage, Claude Code is down
-  - **Gray question mark (?)** — couldn't reach the status page (you're probably fine, it retries every 60 seconds)
-- **Progress bar** — how much of your context window you've used, color-coded:
-  - **Green** — plenty of room (under 70%)
-  - **Yellow** — getting full (70–89%)
-  - **Red** — almost out of context (90%+), consider starting a new session
-- **`10% context (100,000 / 1,000,000)`** — token count in plain numbers
-- **`141m 47s`** — how long your current session has been running
+## Adding the Service Status to Your Statusline
 
----
+If you already have a statusline script (from `/statusline` or your own), you can drop this into it.
 
-## Setup (3 steps, ~2 minutes)
+### What you need
 
-### 1. Install jq (if you don't have it)
+- `jq` installed (`brew install jq` on macOS, `apt install jq` on Linux)
+- `curl` (almost certainly already installed)
 
-The script needs `jq` to read data from Claude Code. Install it:
+### The code
+
+Paste this into your existing `~/.claude/statusline.sh`:
 
 ```bash
-# macOS
-brew install jq
+# --- Claude Code Service Status (cached 60s) ---
+STATUS_CACHE="/tmp/claude_code_status_cache"
+STATUS_TTL=60
+CLAUDE_CODE_COMPONENT_ID="yyzkbfz2thpt"
 
-# Linux
-sudo apt install jq
-```
+get_service_status() {
+    local now=$(date +%s)
+    local cache_time=0
 
-Not sure if you have it? Run `which jq` — if it prints a path, you're good.
+    if [ -f "$STATUS_CACHE" ]; then
+        cache_time=$(stat -f %m "$STATUS_CACHE" 2>/dev/null || stat -c %Y "$STATUS_CACHE" 2>/dev/null || echo 0)
+    fi
 
-### 2. Copy the script
+    if [ $((now - cache_time)) -lt $STATUS_TTL ] && [ -f "$STATUS_CACHE" ]; then
+        cat "$STATUS_CACHE"
+        return
+    fi
 
-Run these two commands in your terminal:
+    local status=$(curl -s --max-time 1 "https://status.claude.com/api/v2/components.json" 2>/dev/null | \
+        jq -r ".components[] | select(.id == \"$CLAUDE_CODE_COMPONENT_ID\") | .status" 2>/dev/null)
 
-```bash
-curl -o ~/.claude/statusline.sh https://raw.githubusercontent.com/MrMister311/claude-code-statusline/main/statusline.sh
-chmod +x ~/.claude/statusline.sh
-```
+    if [ -n "$status" ]; then
+        echo "$status" > "$STATUS_CACHE"
+        echo "$status"
+    elif [ -f "$STATUS_CACHE" ]; then
+        cat "$STATUS_CACHE"
+    else
+        echo "unknown"
+    fi
+}
 
-The first line downloads the script. The second makes it runnable.
-
-> **Note:** If `~/.claude/` doesn't exist yet, create it first: `mkdir -p ~/.claude`
-
-### 3. Tell Claude Code to use it
-
-Open (or create) `~/.claude/settings.json` and add this:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "~/.claude/statusline.sh"
-  }
+format_status() {
+    local GREEN='\033[32m' YELLOW='\033[33m' RED='\033[31m' DIM='\033[90m' RESET='\033[0m'
+    case "$1" in
+        operational)          printf "${GREEN}✓${RESET}" ;;
+        degraded_performance) printf "${YELLOW}◐${RESET}" ;;
+        partial_outage)       printf "${YELLOW}⚠${RESET}" ;;
+        major_outage)         printf "${RED}✗${RESET}" ;;
+        *)                    printf "${DIM}?${RESET}" ;;
+    esac
 }
 ```
 
-If you already have a `settings.json` with other stuff in it, just add the `"statusLine"` block inside the existing `{ }` (don't overwrite your other settings).
+Then wherever you build your output line, add the indicator:
 
-**That's it.** Start a new Claude Code session and you'll see the statusline appear after your first message.
+```bash
+status_indicator=$(format_status "$(get_service_status)")
+echo -e "your existing output here $status_indicator"
+```
+
+### How it works
+
+- Calls Anthropic's public status page API (`status.claude.com`)
+- Looks up the Claude Code component specifically (ID: `yyzkbfz2thpt`)
+- Caches the result for 60 seconds so it's not hitting the API on every message
+- The `curl` timeout is 1 second — if the API is slow, it falls back to the cached result
+- Works on both macOS and Linux (handles the `stat` difference)
 
 ---
 
-## What Each Part Does
+## Full Example Script
 
-| What you see | What it means |
-|---|---|
-| `[Opus 4.6]` | Which Claude model is running |
-| Folder + branch | Your current project directory and git branch |
-| Green/yellow/red bar | Context window usage — green is plenty of room, yellow means you're getting full, red means you're almost out |
-| `42% context` | Percentage of context window used |
-| `(84,000 / 200,000)` | Tokens used out of total available |
-| Timer | How long the current session has been running |
-| Check/warning icon | Whether Claude Code's servers are operational (checks automatically) |
+If you're starting from scratch and want a complete statusline with the service status baked in, there's a full working script in this repo: [`statusline.sh`](statusline.sh)
+
+It includes a context progress bar, git branch, session timer, and the service status indicator. But honestly, you'll probably get a better starting point by running `/statusline` in Claude Code and then just pasting in the service status code from above.
 
 ---
 
-## Troubleshooting
+## Don't Have a Statusline Yet?
 
-**Statusline doesn't appear?**
-- Make sure the script is executable: `chmod +x ~/.claude/statusline.sh`
-- Make sure `jq` is installed: `which jq`
-- Make sure your `settings.json` has the `statusLine` block (check for typos)
-- The statusline only shows up *after* your first message in a session
-
-**Status icon shows `?` instead of a check mark?**
-- That's fine — it just means the status check timed out. It retries every 60 seconds.
-
-**Git branch not showing?**
-- You need to be inside a git repo. The branch display updates every 5 seconds.
-
-**Made changes to the script but nothing changed?**
-- Updates only appear after Claude sends its next response. Send a message and it'll refresh.
-
----
-
-## Customizing It
-
-The script is just a bash file — feel free to edit `~/.claude/statusline.sh` to make it your own. Here are some ideas:
-
-### Show your rate limit usage (Pro/Max subscribers)
-```bash
-rate_5h=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // ""' | cut -d. -f1)
-if [ -n "$rate_5h" ] && [ "$rate_5h" != "null" ]; then
-    echo -e "${DIM}Rate: ${rate_5h}% (5h)${RESET}"
-fi
-```
-
-### Show session cost (API key users)
-```bash
-cost=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
-echo -e "${DIM}Cost: \$${cost}${RESET}"
-```
-
-### Show lines of code changed
-```bash
-added=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
-removed=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
-echo -e "${GREEN}+${added}${RESET} ${RED}-${removed}${RESET} lines"
-```
-
-### Add a late-night reminder
-```bash
-hour=$(date +%H)
-if [ "$hour" -ge 0 ] && [ "$hour" -lt 6 ]; then
-    echo -e "${RED}It's late — consider wrapping up${RESET}"
-fi
-```
-
-### Want something even simpler?
-
-Skip the script file entirely and put this one-liner in your `settings.json`:
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "jq -r '\"[\\(.model.display_name)] \\(.context_window.used_percentage // 0 | floor)% context\"'"
-  }
-}
-```
-
----
-
-## Deep Dive (for the curious)
-
-Everything below is optional reading. You don't need any of this to use the statusline — it's here if you want to understand how it works or build your own from scratch.
-
-### How it works under the hood
-
-1. Every time Claude sends a response, Claude Code runs your statusline script
-2. It sends your script a bunch of session data as JSON (model info, token counts, etc.)
-3. Your script reads that data, formats it however you want, and prints it out
-4. Whatever your script prints becomes the status bar
-
-### Available data from Claude Code
-
-Claude Code sends all of this to your script. You can use any of it:
-
-**Session basics:**
-
-| Field | What it is |
-|---|---|
-| `model.display_name` | Model name (e.g., "Opus") |
-| `model.id` | Model ID (e.g., "claude-opus-4-6") |
-| `workspace.current_dir` | Your current directory |
-| `session_id` | Unique ID for this session |
-| `version` | Claude Code version |
-
-**Context window:**
-
-| Field | What it is |
-|---|---|
-| `context_window.used_percentage` | How full the context window is (0-100) |
-| `context_window.remaining_percentage` | How much room is left (0-100) |
-| `context_window.context_window_size` | Total context size in tokens |
-
-**Costs and timing:**
-
-| Field | What it is |
-|---|---|
-| `cost.total_cost_usd` | Session cost in dollars |
-| `cost.total_duration_ms` | Session length in milliseconds |
-| `cost.total_lines_added` | Lines of code added |
-| `cost.total_lines_removed` | Lines of code removed |
-
-**Rate limits (Pro/Max subscribers only):**
-
-| Field | What it is |
-|---|---|
-| `rate_limits.five_hour.used_percentage` | 5-hour rate limit usage |
-| `rate_limits.seven_day.used_percentage` | 7-day rate limit usage |
-
-### Writing your own in Python
-
-You don't have to use bash. Here's a minimal Python version:
-
-```python
-#!/usr/bin/env python3
-import json, sys
-
-data = json.load(sys.stdin)
-model = data.get("model", {}).get("display_name", "Claude")
-pct = int(data.get("context_window", {}).get("used_percentage", 0) or 0)
-bar_width = 20
-filled = pct * bar_width // 100
-bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
-print(f"[{model}] {bar} {pct}%")
-```
-
-Save it as `~/.claude/statusline.py`, run `chmod +x` on it, and point your settings.json at it instead.
-
-### Things to keep in mind if you're building your own
-
-- **Use `used_percentage`** for context tracking — don't try to calculate it yourself from token counts
-- **Cache anything slow** — the script runs after every message, so network calls and git commands should be cached
-- **Handle missing data** — some fields are empty before the first API response
-- **Keep it fast** — if your script takes longer than ~300ms, it gets cancelled
-- **macOS vs Linux** — the `stat` command works differently on each; the included script handles both
+1. Open Claude Code
+2. Type `/statusline`
+3. Describe what you want (e.g., "show context percentage with a progress bar and session timer")
+4. Claude generates and configures it for you
+5. Come back here and add the service status snippet if you want it
 
 ---
 
