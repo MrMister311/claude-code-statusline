@@ -7,8 +7,16 @@ A status bar for Claude Code that shows you what's going on at a glance — how 
 **What you're looking at:**
 - **`[Opus 4.6 (1M context)]`** — the model and context window you're using
 - **`HomeLab | main`** — your current project folder and git branch
-- **Green check mark** — Claude Code's servers are up and running
-- **Green progress bar** — how much of your context window you've used (turns yellow at 70%, red at 90%)
+- **Server status icon** — live check on Claude Code's servers:
+  - **Green check mark (✓)** — everything's working normally
+  - **Yellow half-circle (◐)** — servers are up but slower than usual
+  - **Yellow warning (⚠)** — partial outage, some features may not work
+  - **Red X (✗)** — major outage, Claude Code is down
+  - **Gray question mark (?)** — couldn't reach the status page (you're probably fine, it retries every 60 seconds)
+- **Progress bar** — how much of your context window you've used, color-coded:
+  - **Green** — plenty of room (under 70%)
+  - **Yellow** — getting full (70–89%)
+  - **Red** — almost out of context (90%+), consider starting a new session
 - **`10% context (100,000 / 1,000,000)`** — token count in plain numbers
 - **`141m 47s`** — how long your current session has been running
 
