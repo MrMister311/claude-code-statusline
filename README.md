@@ -1,10 +1,29 @@
 # Claude Code Custom Statusline
 
-A status bar for Claude Code that shows you what's going on at a glance — how much context you've used, what model you're on, which project and branch you're in, and whether Claude's servers are healthy.
+Claude Code already has [built-in statusline support](https://code.claude.com/docs/en/statusline) — it lets you run a custom script that displays whatever you want at the bottom of the CLI. This project is a **ready-to-use script** that takes advantage of that feature and adds a few things on top.
 
 ![Claude Code Statusline](statusline.jpg)
 
-**What you're looking at:**
+### What's native to Claude Code vs. what this adds
+
+Claude Code's built-in statusline gives you the *infrastructure* — it runs your script after every message and feeds it session data (model, tokens, costs, etc.). But out of the box, there's no script. You bring your own.
+
+**This script adds:**
+- A **color-coded context progress bar** that shifts from green to yellow to red as you fill up
+- A **live server status indicator** that checks Anthropic's status page so you know if Claude is having issues
+- **Git branch display** so you always know what branch you're working on
+- **Formatted token counts** with comma separators for readability
+- **Session timer** showing how long you've been working
+- **A "waiting" state** before your first response (instead of showing a confusing empty bar)
+- **Caching** for git lookups and status API calls so the script stays fast
+
+Everything else — the JSON data, the settings.json config, the ability to run a custom script — that's all Claude Code's native feature. We just built a nice script on top of it.
+
+> For full details on Claude Code's native statusline support, see the [official documentation](https://code.claude.com/docs/en/statusline).
+
+---
+
+**What you're looking at in the screenshot:**
 - **`[Opus 4.6 (1M context)]`** — the model and context window you're using
 - **`HomeLab | main`** — your current project folder and git branch
 - **Server status icon** — live check on Claude Code's servers:
